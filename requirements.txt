@@ -1,0 +1,4 @@
+smbus2>=0.4.3
+Jetson.GPIO>=2.1.0
+# for test_two_sensors.py (pulls in adafruit-blinka for board/busio)
+adafruit-circuitpython-vl53l0x>=3.6

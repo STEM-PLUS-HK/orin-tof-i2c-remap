@@ -1,0 +1,9 @@
+# Restart the ToF address switcher when the I2C adapter device node reappears.
+# This does NOT fire on a simple SDA/SCL cable yank (no udev event for slaves);
+# the monitor loop in tof_i2c_switcher.py handles that case by polling.
+#
+# Default Orin Nano header I2C (pins 27/28) is usually /dev/i2c-1. Adjust KERNEL
+# if your config.json uses a different i2c_bus.
+
+ACTION=="add", KERNEL=="i2c-1", SUBSYSTEM=="i2c-dev", TAG+="systemd", ENV{SYSTEMD_WANTS}+="tof-i2c-switcher.service"
+ACTION=="add", KERNEL=="i2c-1", SUBSYSTEM=="i2c-dev", RUN+="/bin/systemctl --no-block try-restart tof-i2c-switcher.service"
