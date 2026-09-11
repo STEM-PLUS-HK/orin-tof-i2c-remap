@@ -1,0 +1,13 @@
+{
+  "i2c_bus": 1,
+  "default_addr": "0x29",
+  "remapped_addr": "0x30",
+  "sensor_model": "vl53l0x",
+  "gpio_mode": "BOARD",
+  "xshut_keep_default": 29,
+  "xshut_gpio_name": "PQ.05",
+  "xshut_remapped": null,
+  "xshut_active_low": true,
+  "pinmux_reg": "0x2430068",
+  "boot_timeout_ms": 100
+}
