@@ -1,18 +1,14 @@
 [Unit]
-Description=ToF simplest: rename from config, poke pinmux, hold XSHUT HIGH
+Description=ToF simplest: 0x29->0x30, poke pin 29, hold HIGH
 After=dev-i2c-1.device
 Wants=dev-i2c-1.device
-After=multi-user.target
-Conflicts=tof-i2c-switcher.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/orin_nano_i2c_switcher/tof_i2c_switcher_simple.py -c /etc/orin_nano_i2c_switcher/config.json
-Restart=no
+ExecStart=/opt/orin_nano_i2c_switcher/tof_i2c_switcher_simple.sh
+Restart=on-failure
+RestartSec=3
 User=root
-Group=root
-StandardOutput=journal
-StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

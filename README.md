@@ -24,7 +24,7 @@ i2cdetect -l
 sudo i2cdetect -y -r 1
 ```
 
-Prefer BOARD pins **13 / 15 / 16 / 18 / 29+** (avoid 1–12 if those are unavailable on your carrier). Pin **29** is next to I2C pins 27/28 if you want short XSHUT wiring. Some header pins need pinmux as GPIO.
+Use BOARD pin **29** (`PQ.05`) for XSHUT. On JetRacer, **do not** use **13 / 15 / 16 / 18 / 19** — those are the jetcard OLED 5-way buttons. OLED itself is on **I2C bus 7** (pins 3/5); ToF stays on bus 1. Some header pins need pinmux as GPIO.
 
 ## Sensor models
 
@@ -51,7 +51,7 @@ Pick **one** path. Both share [`config.json`](config.json) → `/etc/orin_nano_i
 
 ### Simple (recommended for JetRacer / JP6)
 
-Rename `0x29`→`0x30` once, poke pinmux, hold XSHUT HIGH. **No** poll loop, **no** cable-replug recovery.
+`sudo ./simple_install.sh` is one shot: **step0** apt+pip, then a systemd unit that runs **step1** `i2ctransfer 0x29→0x30` and **step2** poke pin 29 + hold `PQ.05` HIGH. Use this on JetRacer, not `install.sh`.
 
 ```bash
 sudo ./simple_install.sh
