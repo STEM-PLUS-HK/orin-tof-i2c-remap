@@ -1,130 +1,65 @@
 # ToF XSHUT I2C address switcher
 
-Remap one of two VL53 ToF sensors that share the same I2C address on a single Jetson Orin Nano bus by using **XSHUT** (active-low reset).
+Two VL53 ToF sensors share **0x29** on one Orin Nano I2C bus. This repo remaps one chip to **0x30** using **XSHUT** (active-low reset) on header pin 29.
 
-Default: leave one sensor at **0x29**, move the other to **0x30**. All settings live in [`config.json`](config.json).
+JetRacer / JetPack 6 notes: [README_JETRACER.md](README_JETRACER.md).
 
-## Why not two I2C buses?
+## Tech stack
 
-Orin Nano can put devices on bus 7 (pins 3/5) and bus 1 (pins 27/28). This project assumes **both sensors stay on bus 1** (pins 27/28 → `/dev/i2c-1`). Isolation is software + XSHUT, not a second bus or TCA9548A mux.
+- bash + systemd
+- `i2c-tools` (`i2ctransfer`, `i2cdetect`)
+- `busybox` (`devmem` pinmux poke)
+- `gpiod` (`gpiofind`, `gpioset`)
+- Python only for `test_two_sensors.py` (`smbus2`, Blinka, Adafruit VL53L0X)
 
-## Wiring
+## Architecture
 
-| Signal | Typical Orin Nano header |
-|--------|--------------------------|
-| SDA / SCL | Pins 27 & 28 → `/dev/i2c-1` (confirm with `i2cdetect -l`) |
-| XSHUT (sensor that stays at 0x29) | GPIO BOARD pin from `xshut_keep_default` (default **29**) |
-| XSHUT (sensor to remap) | Optional `xshut_remapped`, or tie that XSHUT **high** so it always boots |
-| Logic / pull-ups | 3.3 V |
+Both sensors stay on **bus 1** (pins 27/28 → `/dev/i2c-1`). Isolation is software + one XSHUT pin, not a second bus or TCA9548A.
 
-Confirm the bus index on your image:
+| Signal | Header |
+|--------|--------|
+| SDA / SCL | Pins 27 / 28 → `/dev/i2c-1` |
+| XSHUT (sensor that stays at 0x29) | Pin **29** (`PQ.05`) |
+| XSHUT (sensor remapped to 0x30) | Tie **high** (breakout pull-up) |
+| OLED (jetcard, do not touch) | Bus **7**, pins 3/5; buttons 13/15/16/18/19 |
 
-```bash
-i2cdetect -l
-sudo i2cdetect -y -r 1
-```
+Boot unit `tof-i2c-switcher-simple.service` runs [`tof_i2c_switcher_simple.sh`](tof_i2c_switcher_simple.sh):
 
-Use BOARD pin **29** (`PQ.05`) for XSHUT. On JetRacer, **do not** use **13 / 15 / 16 / 18 / 19** — those are the jetcard OLED 5-way buttons. OLED itself is on **I2C bus 7** (pins 3/5); ToF stays on bus 1. Some header pins need pinmux as GPIO.
+1. `i2ctransfer` `0x29` → `0x30` (skip if 0x29 is already gone)
+2. Poke pinmux `0x2430068` → `0x8` so pin 29 can drive
+3. `gpioset --mode=signal` hold `PQ.05` **HIGH** until the service stops
 
-## Sensor models
+`--mode=signal` is required under systemd. `--mode=wait` waits for Enter, exits immediately, and **releases** the pin (service shows `inactive (dead)` / SUCCESS). Release is high-Z, not a forced LOW; a pull-up may still keep XSHUT high.
 
-Set `sensor_model` in `config.json`:
+The VL53 address change is **RAM only**. A full power cut brings both chips back to 0x29. A `reboot` often does **not** cut 3.3 V, so 0x30 can remain.
 
-| Key | Reg width | Address register |
-|-----|-----------|------------------|
-| `vl53l0x` | 8-bit | `0x8A` |
-| `vl53l1x`, `vl53l1cb`, `vl53l3cx` | 16-bit | `0x0001` |
-| `vl53l4cd`, `vl53l4cx` | 16-bit | `0x0001` |
-
-## Sequence
-
-1. Hold keep-default sensor in reset via XSHUT (off the bus).
-2. Write the new 7-bit address into the remapped sensor (still at 0x29).
-3. Release XSHUT on the keep-default sensor so it boots at 0x29.
-4. Verify both `0x29` and `0x30` ACK.
-
-With two XSHUT pins configured, both are reset first; only the remapped sensor is released before the address write.
-
-## Install (on the Jetson)
-
-Pick **one** path. Both share [`config.json`](config.json) → `/etc/orin_nano_i2c_switcher/config.json`. Running one installer disables the other service so they cannot fight over GPIO.
-
-### Simple (recommended for JetRacer / JP6)
-
-`sudo ./simple_install.sh` is one shot: **step0** apt+pip, then a systemd unit that runs **step1** `i2ctransfer 0x29→0x30` and **step2** poke pin 29 + hold `PQ.05` HIGH. Use this on JetRacer, not `install.sh`.
+## Install / run (on the Jetson)
 
 ```bash
 sudo ./simple_install.sh
-sudo i2cdetect -y -r 1          # expect 29 and 30
-journalctl -u tof-i2c-switcher-simple -f
+sudo i2cdetect -y -r 1                    # expect 29 and 30
+systemctl status tof-i2c-switcher-simple  # want: active (running)
+journalctl -u tof-i2c-switcher-simple -n 30 --no-pager
 ```
 
-### Normal (monitor + udev)
-
-Remap, then poll forever and re-run the XSHUT sequence if `0x30` disappears. Also starts `tof-xshut-pinmux.service` **before** the monitor (required so pin 29 can drive).
+Wanted log line: `hold PQ.05 HIGH`, then the unit **stays running** (`ps` shows `gpioset --mode=signal`).
 
 ```bash
-sudo ./install.sh
+sudo systemctl restart tof-i2c-switcher-simple
+sudo systemctl disable --now tof-i2c-switcher-simple
+sudo ./uninstall.sh
 ```
 
-Safe to re-run after pulling updates: **scripts, systemd unit, and udev rules are always overwritten**. Existing `/etc/orin_nano_i2c_switcher/config.json` is **kept**; new defaults are saved as `/opt/orin_nano_i2c_switcher/config.json.example`.
-
-This installs:
-
-- `/opt/orin_nano_i2c_switcher/tof_i2c_switcher.py` (+ install/uninstall helpers)
-- `/etc/orin_nano_i2c_switcher/config.json`
-- systemd unit `tof-i2c-switcher.service` (starts `monitor` after the I2C device)
-- udev rule that restarts the service when `/dev/i2c-N` is added
-
-Edit config, then restart:
+Range check (after 29+30 are on the bus):
 
 ```bash
-sudo nano /etc/orin_nano_i2c_switcher/config.json
-sudo systemctl restart tof-i2c-switcher
+sudo python3 test_two_sensors.py
 ```
 
-## Uninstall
+## Manual (same as the service)
 
 ```bash
-sudo ./uninstall.sh          # keep config under /etc
-sudo ./uninstall.sh --purge  # also remove config + lock file
+sudo i2ctransfer -y 1 w2@0x29 0x8A 0x30
+sudo busybox devmem 0x2430068 w 0x8
+sudo gpioset --mode=signal $(gpiofind PQ.05)=1
 ```
-
-Or after install: `sudo /opt/orin_nano_i2c_switcher/uninstall.sh`.
-
-## Manual usage
-
-```bash
-pip3 install -r requirements.txt
-
-# Remap once
-sudo python3 tof_i2c_switcher.py init -c config.json
-
-# Probe expected addresses
-sudo python3 tof_i2c_switcher.py status -c config.json
-
-# Remap then poll forever (what systemd runs)
-sudo python3 tof_i2c_switcher.py monitor -c config.json
-```
-
-CLI overrides: `--bus`, `--model`, `--default-addr`, `--remap-addr`, `--xshut-keep`, `--xshut-remap`, `--poll-interval`, `-v`.
-
-## Reconnect handling
-
-I2C **slaves** do not generate udev events when you unplug SDA/SCL. After a cable yank both chips typically come back at **0x29**, so **0x30** disappears.
-
-| Mechanism | What it covers |
-|-----------|----------------|
-| **`monitor` poll loop** (primary) | Detects missing remapped address and re-runs the full XSHUT sequence. Uses a file lock so overlapping runs do not race. |
-| **systemd on boot** | Runs `monitor` after `dev-i2c-N.device`. |
-| **udev on `i2c-dev` add** | Restarts the service if the adapter node reappears (adapter re-probe), not a wire wiggle. |
-
-Logs:
-
-```bash
-journalctl -u tof-i2c-switcher -f
-```
-
-## Application note
-
-This tool only assigns addresses. Your ranging / ROS / app code should open the sensors at `default_addr` and `remapped_addr` on the configured bus after the switcher has run (or rely on the always-on monitor).
