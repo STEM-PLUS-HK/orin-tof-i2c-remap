@@ -9,5 +9,6 @@ echo "==> step2: poke pin 29"
 busybox devmem 0x2430068 w 0x8
 busybox devmem 0x2430068
 
-echo "==> hold PQ.05 HIGH"
+echo "==> hold PQ.05 HIGH (libgpiod keeps the line)"
+# ponytail: --mode=signal blocks forever; systemd stop kills it, pin releases.
 exec gpioset --mode=signal $(gpiofind PQ.05)=1

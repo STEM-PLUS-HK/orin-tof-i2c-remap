@@ -10,7 +10,7 @@ JetRacer / JetPack 6 notes: [README_JETRACER.md](README_JETRACER.md).
 - `i2c-tools` (`i2ctransfer`, `i2cdetect`)
 - `busybox` (`devmem` pinmux poke)
 - `gpiod` (`gpiofind`, `gpioset`)
-- Python only for `test_two_sensors.py` (`smbus2`, Blinka, Adafruit VL53L0X)
+- Python only for `test_two_sensors.py` (Blinka `board`/`busio` + Adafruit VL53L0X; needs recent Blinka for `board.SCL_1`)
 
 ## Architecture
 
@@ -23,7 +23,10 @@ Both sensors stay on **bus 1** (pins 27/28 → `/dev/i2c-1`). Isolation is softw
 | XSHUT (sensor remapped to 0x30) | Tie **high** (breakout pull-up) |
 | OLED (jetcard, do not touch) | Bus **7**, pins 3/5; buttons 13/15/16/18/19 |
 
-Boot unit `tof-i2c-switcher-simple.service` runs [`tof_i2c_switcher_simple.sh`](tof_i2c_switcher_simple.sh):
+Boot unit `tof-i2c-switcher-simple.service` starts after `/dev/i2c-1` exists
+(`After=dev-i2c-1.device` **only** — ordering against the jetcard units caused a
+systemd ordering cycle and systemd silently dropped the start job; see
+[README_JETRACER.md](README_JETRACER.md) #5). It runs [`tof_i2c_switcher_simple.sh`](tof_i2c_switcher_simple.sh):
 
 1. `i2ctransfer` `0x29` → `0x30` (skip if 0x29 is already gone)
 2. Poke pinmux `0x2430068` → `0x8` so pin 29 can drive
@@ -36,6 +39,7 @@ The VL53 address change is **RAM only**. A full power cut brings both chips back
 ## Install / run (on the Jetson)
 
 ```bash
+git clone <this-repo-url> && cd orin_nano_i2c_switcher
 sudo ./simple_install.sh
 sudo i2cdetect -y -r 1                    # expect 29 and 30
 systemctl status tof-i2c-switcher-simple  # want: active (running)
@@ -50,11 +54,30 @@ sudo systemctl disable --now tof-i2c-switcher-simple
 sudo ./uninstall.sh
 ```
 
-Range check (after 29+30 are on the bus):
+Range check (after 29+30 are on the bus). Addresses come from [`config.json`](config.json):
 
 ```bash
-sudo python3 test_two_sensors.py
+sudo python3 test_two_sensors.py -c config.json
 ```
+
+## Recovery (no reboot)
+
+Sensors drop off the bus mid-session (bad contact, XSHUT unplugged, power dip —
+the `0x30` address is RAM-only)? Open [`reconnect.ipynb`](reconnect.ipynb) in
+Jupyter. Cell 1 runs `i2cdetect`, detects which case you are in, and tells you
+which fix cell to run: wake XSHUT (pin 29 HIGH), full re-remap
+(low → rename → high), or hardware check. No reboot needed.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `tof_i2c_switcher_simple.sh` | boot-time remap + pinmux poke + pin-29 hold (run by systemd) |
+| `systemd/tof-i2c-switcher-simple.service` | the boot unit |
+| `simple_install.sh` / `uninstall.sh` | install / remove everything |
+| `reconnect.ipynb` | Jupyter recovery when sensors drop mid-session |
+| `test_two_sensors.py` + `config.json` | range both sensors (bus/address check) |
+| `move_addr.py`, `xshut_pulse.py` | debug leftovers — not used by the service |
 
 ## Manual (same as the service)
 

@@ -1,4 +1,6 @@
-smbus2>=0.4.3
-Jetson.GPIO>=2.1.0
-# for test_two_sensors.py (pulls in adafruit-blinka for board/busio)
+# smbus2>=0.4.3
+# test_two_sensors.py uses board/busio (Blinka) + the VL53L0X driver.
+# Blinka must be recent enough to expose board.SCL_1 on Orin Nano;
+# if you get AttributeError: SCL_1, run: pip3 install --upgrade adafruit-blinka
+adafruit-blinka>=3.0
 adafruit-circuitpython-vl53l0x>=3.6

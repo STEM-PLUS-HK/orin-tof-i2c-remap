@@ -46,9 +46,32 @@ sudo i2ctransfer -y 1 w1@0x29 0xC0 r1   # expect 0xee
 
 VL53 always boots at `0x29` after **power loss** or **XSHUT low**. A Jetson `reboot` often leaves header 3.3 V up, so `0x30` can survive even if systemd is `dead`.
 
+To re-remap **without rebooting**, use [`reconnect.ipynb`](reconnect.ipynb) — it detects the case from `i2cdetect` and runs the right fix.
+
+### 5. Enabled service never started at boot (ordering cycle)
+
+Unit was `enabled` but `inactive (dead)` after every boot, with **zero** journal
+entries (`journalctl -u ... -b` → `-- No entries --`). The tell is in the main log:
+
+```bash
+sudo journalctl -b 0 | grep -i tof
+# Found ordering cycle on tof-i2c-switcher-simple.service/start
+# Job ... deleted to break ordering cycle
+```
+
+Cause: `After=jetcard_display.service jetcard_jupyter.service jtop.service`.
+Fix: order only against `dev-i2c-1.device`. The jetcard units were never real
+dependencies — `gpioset` claims just the one pin, nothing to sequence against.
+
+### 6. `AttributeError: module 'adafruit_platformdetect' has no attribute 'Detector'`
+
+Shows up after upgrading Blinka alone: the old PlatformDetect still satisfies
+pip's version check, so it never gets upgraded and new Blinka crashes on import.
+Fix: `pip3 install --upgrade --force-reinstall Adafruit-PlatformDetect`.
+
 ## Boot
 
-`tof-i2c-switcher-simple.service` (`WantedBy=multi-user.target`, `After=dev-i2c-1.device`):
+`tof-i2c-switcher-simple.service` (`WantedBy=multi-user.target`, `After=dev-i2c-1.device` only — see #5):
 
 1. `i2ctransfer -y 1 w2@0x29 0x8A 0x30`
 2. poke `0x2430068`
@@ -85,5 +108,9 @@ Do **not** use `busio.I2C(board.SCL, board.SDA)` (pins 3/5, bus 7). Sensors are 
 ```python
 i2c = busio.I2C(board.SCL_1, board.SDA_1)
 ```
+
+`board.SCL_1` needs a **recent Blinka** — old versions throw
+`AttributeError: module 'board' has no attribute 'SCL_1'`. Fix:
+`pip3 install --upgrade adafruit-blinka` (already in `simple_install.sh`).
 
 `test_two_sensors.py` already does this. Jupyter: `sudo usermod -aG i2c $USER` and a full JupyterLab restart. Open **one** I2C object; talk to `0x29` and `0x30`. Skip Blinka `i2c.scan()`.
