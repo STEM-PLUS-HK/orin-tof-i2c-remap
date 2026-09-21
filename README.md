@@ -76,6 +76,7 @@ which fix cell to run: wake XSHUT (pin 29 HIGH), full re-remap
 | `systemd/tof-i2c-switcher-simple.service` | the boot unit |
 | `simple_install.sh` / `uninstall.sh` | install / remove everything |
 | `reconnect.ipynb` | Jupyter recovery when sensors drop mid-session |
+| `remap_utils.py` | auto-detect + fix logic behind the notebook's `Resolve!` button |
 | `test_two_sensors.py` + `config.json` | range both sensors (bus/address check) |
 | `move_addr.py`, `xshut_pulse.py` | debug leftovers — not used by the service |
 
