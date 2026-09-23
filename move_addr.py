@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rename a VL53L0X's I2C address (e.g. 0x29 -> 0x30).
+"""Rename a VL53L0X's I2C address (e.g. 0x29 -> 0x28).
 
 Run this while ONLY the sensor you want to rename is awake on the bus
 (e.g. during the LOW window of xshut_pulse.py). Anything else answering
@@ -29,7 +29,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--bus", type=int, default=1)
     p.add_argument("--from", dest="old", default="0x29", help="current address (default 0x29)")
-    p.add_argument("--to", dest="new", default="0x30", help="new address (default 0x30)")
+    p.add_argument("--to", dest="new", default="0x28", help="new address (default 0x28)")
     args = p.parse_args()
 
     old, new = int(args.old, 0), int(args.new, 0)

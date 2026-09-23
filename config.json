@@ -1,7 +1,7 @@
 {
   "i2c_bus": 1,
   "default_addr": "0x29",
-  "remapped_addr": "0x30",
+  "remapped_addr": "0x28",
   "sensor_model": "vl53l0x",
   "gpio_mode": "BOARD",
   "xshut_keep_default": 29,

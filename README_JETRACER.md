@@ -9,11 +9,11 @@ with JP 6.2. Install path is in [README.md](README.md): `sudo ./simple_install.s
 |------|-------|
 | I2C | Pins **27 (SDA) / 28 (SCL)** → `/dev/i2c-1` |
 | Sensor | `vl53l0x` (reg `0xC0` reads `0xEE`) |
-| XSHUT | Pin **29** (`PQ.05`) → keep-default sensor (stays **0x29**) |
-| Other XSHUT | Float / breakout pull-up → remapped to **0x30** |
+| XSHUT | Pin **29** (`PQ.05`) → **right** sensor (stays **0x29**) |
+| Other XSHUT | Float / breakout pull-up → **left** sensor, remapped to **0x28** |
 | OLED (jetcard) | I2C **bus 7** (pins 3/5). Buttons **13 / 15 / 16 / 18 / 19**. Do not use those pins for ToF. |
 
-The service renames whoever is at `0x29` when it runs. With pin 29 **not** driven low first, that is the chip whose XSHUT is already high (the floating one). Then it pokes pinmux and holds pin 29 HIGH so the second chip boots at `0x29`.
+The service renames whoever is at `0x29` when it runs. With pin 29 **not** driven low first, that is the chip whose XSHUT is already high (the floating one). Then it pokes pinmux, drives pin 29 HIGH, and exits. The pull-up keeps that chip out of reset at `0x29`.
 
 ## What went wrong (JP 6.2)
 
@@ -42,9 +42,9 @@ This poke is **not** persistent across reboot. The simple service does it every 
 sudo i2ctransfer -y 1 w1@0x29 0xC0 r1   # expect 0xee
 ```
 
-### 4. Address `0x30` is RAM
+### 4. Address `0x28` is RAM
 
-VL53 always boots at `0x29` after **power loss** or **XSHUT low**. A Jetson `reboot` often leaves header 3.3 V up, so `0x30` can survive even if systemd is `dead`.
+VL53 always boots at `0x29` after **power loss** or **XSHUT low**. A Jetson `reboot` often leaves header 3.3 V up, so `0x28` can survive even if systemd is `dead`.
 
 To re-remap **without rebooting**, use [`reconnect.ipynb`](reconnect.ipynb) — it detects the case from `i2cdetect` and runs the right fix.
 
@@ -73,17 +73,16 @@ Fix: `pip3 install --upgrade --force-reinstall Adafruit-PlatformDetect`.
 
 `tof-i2c-switcher-simple.service` (`WantedBy=multi-user.target`, `After=dev-i2c-1.device` only — see #5):
 
-1. `i2ctransfer -y 1 w2@0x29 0x8A 0x30`
+1. `i2ctransfer -y 1 w2@0x29 0x8A 0x28`
 2. poke `0x2430068`
-3. `gpioset --mode=signal $(gpiofind PQ.05)=1` — **must stay running**
+3. `gpioset --mode=exit $(gpiofind PQ.05)=1` — drives HIGH, releases, script ends
 
-Use `--mode=signal` (systemd). `--mode=wait` waits for Enter, exits, service shows `inactive (dead)` / SUCCESS, pin is **released** (high-Z, not forced 0).
+`Type=oneshot` + `RemainAfterExit=yes` so status stays `active (exited)`. No process holds the pin. This JetRacer's pull-up keeps XSHUT high after release.
 
 ```bash
 sudo ./simple_install.sh
-systemctl status tof-i2c-switcher-simple   # want: active (running)
-ps aux | grep gpioset
-sudo i2cdetect -y -r 1                     # want: 29 and 30
+systemctl status tof-i2c-switcher-simple   # want: active (exited)
+sudo i2cdetect -y -r 1                     # want: 29 and 28
 ```
 
 Uninstall: `sudo ./uninstall.sh`.
@@ -96,9 +95,9 @@ sudo i2cdetect -y -r 1
 gpiofind PQ.05                       # e.g. gpiochip0 81
 gpioinfo | grep PQ.05
 
-sudo gpioset --mode=signal $(gpiofind PQ.05)=1   # hold HIGH (Ctrl-C / SIGTERM)
+sudo gpioset --mode=exit $(gpiofind PQ.05)=1     # drive HIGH, then release
 sudo busybox devmem 0x2430068 w 0x8
-sudo i2ctransfer -y 1 w2@0x29 0x8A 0x30
+sudo i2ctransfer -y 1 w2@0x29 0x8A 0x28
 ```
 
 ## App code
@@ -113,4 +112,4 @@ i2c = busio.I2C(board.SCL_1, board.SDA_1)
 `AttributeError: module 'board' has no attribute 'SCL_1'`. Fix:
 `pip3 install --upgrade adafruit-blinka` (already in `simple_install.sh`).
 
-`test_two_sensors.py` already does this. Jupyter: `sudo usermod -aG i2c $USER` and a full JupyterLab restart. Open **one** I2C object; talk to `0x29` and `0x30`. Skip Blinka `i2c.scan()`.
+`test_two_sensors.py` already does this. Jupyter: `sudo usermod -aG i2c $USER` and a full JupyterLab restart. Open **one** I2C object; talk to `0x29` and `0x28`. Skip Blinka `i2c.scan()`.
