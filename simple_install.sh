@@ -16,13 +16,16 @@ if ! timeout 60 apt-get install -y busybox i2c-tools gpiod; then
   echo "WARNING: apt failed. Boot remap needs busybox, i2c-tools, and gpiod already installed."
 fi
 # Blinka + VL53L0X driver are only for test_two_sensors.py (board/busio).
-# Boot service uses no Python. --upgrade only Blinka: old Blinka lacks
-# board.SCL_1 on Orin Nano, and this does not touch jetcard's OLED stack.
+# Boot service uses no Python. Force-reinstall both: an already-installed
+# Blinka can lack board.SCL_1, and an already-installed adafruit_vl53l0x can
+# load without the VL53L0X class. This does not touch jetcard's OLED stack.
 if ! pip3 install --timeout 30 -r "${SCRIPT_DIR}/requirements.txt"; then
   echo "WARNING: pip requirements failed (often no internet)."
 fi
-if ! pip3 install --timeout 30 --upgrade --force-reinstall adafruit-blinka; then
-  echo "WARNING: could not reinstall adafruit-blinka. board.SCL_1 needs a recent Blinka."
+if ! pip3 install --timeout 30 --upgrade --force-reinstall \
+    adafruit-blinka adafruit-circuitpython-vl53l0x; then
+  echo "WARNING: could not reinstall adafruit-blinka and adafruit-circuitpython-vl53l0x."
+  echo "         board.SCL_1 needs a recent Blinka, and the driver needs class VL53L0X."
 fi
 
 echo "==> stop other ToF units from this repo (may not exist; that is OK)"
